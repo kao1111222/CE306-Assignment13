@@ -1,0 +1,234 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  STUDENT
+  STAFF
+  ADMIN
+}
+
+enum EquipmentStatus {
+  AVAILABLE
+  BORROWED
+  REPAIR
+  RETIRED
+}
+
+enum BorrowStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  BORROWED
+  OVERDUE
+  RETURNED
+  CANCELLED
+  LOST
+}
+
+enum IncidentType {
+  DAMAGED
+  LOST
+  UNREACHABLE
+}
+
+enum IncidentStatus {
+  OPEN
+  RESOLVED
+}
+
+enum SupportRequestStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+}
+
+model User {
+  id           String   @id @default(uuid())
+  studentId    String   @unique
+  name         String
+  email        String   @unique
+  phone        String?
+  address      String?
+  passwordHash String
+  faculty      String?
+  role         UserRole @default(STUDENT)
+  createdAt    DateTime @default(now())
+
+  requests        BorrowRequest[]  @relation("Requester")
+  approvals       BorrowRequest[]  @relation("Approver")
+  passwordResets  PasswordReset[]
+  supportRequests SupportRequest[]
+}
+
+model PasswordReset {
+  id        String   @id @default(uuid())
+  tokenHash String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Category {
+  id        String      @id @default(uuid())
+  name      String      @unique
+  equipment Equipment[]
+}
+
+model Equipment {
+  id          String          @id @default(uuid())
+  code        String          @unique
+  name        String
+  description String?
+  location    String?
+  status      EquipmentStatus @default(AVAILABLE)
+  categoryId  String
+  category    Category        @relation(fields: [categoryId], references: [id])
+  createdAt   DateTime        @default(now())
+
+  requests        BorrowRequest[]
+  supportRequests SupportRequest[]
+}
+
+model SupportRequest {
+  id            String               @id @default(uuid())
+  userId        String?
+  user          User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
+  reporterName  String
+  reporterEmail String
+  category      String
+  subject       String
+  description   String
+  equipmentId   String?
+  equipment     Equipment?           @relation(fields: [equipmentId], references: [id], onDelete: SetNull)
+  status        SupportRequestStatus @default(OPEN)
+  createdAt     DateTime             @default(now())
+  resolvedAt    DateTime?
+
+  @@index([status, createdAt])
+  @@index([userId, createdAt])
+}
+
+model BorrowRequest {
+  id                        String              @id @default(uuid())
+  userId                    String
+  user                      User                @relation("Requester", fields: [userId], references: [id])
+  equipmentId               String
+  equipment                 Equipment           @relation(fields: [equipmentId], references: [id])
+  borrowDate                DateTime
+  dueDate                   DateTime
+  purpose                   String?
+  status                    BorrowStatus        @default(PENDING)
+  approvedById              String?
+  approvedBy                User?               @relation("Approver", fields: [approvedById], references: [id])
+  staffNote                 String?
+  handedOutAt               DateTime?
+  returnedAt                DateTime?
+  returnCondition           String?
+  agreementAcceptedAt       DateTime?
+  agreementText             String?
+  borrowerName              String?
+  borrowerStudentId         String?
+  borrowerPhone             String?
+  borrowerEmail             String?
+  handoutPhoto              String?
+  returnPhoto               String?
+  borrowerReturnPhoto       String?
+  borrowerReturnSubmittedAt DateTime?
+  borrowerReturnNote        String?
+  overdueReviewedAt         DateTime?
+  overdueReviewedById       String?
+  overdueReviewNote         String?
+  fineAmount                Int                 @default(0)
+  finePaid                  Boolean             @default(false)
+  createdAt                 DateTime            @default(now())
+  incidents                 BorrowIncident[]
+  overdueContacts           OverdueContactLog[]
+  pickupVerification        PickupVerification?
+  reminders                 DueReminder[]
+
+  @@index([userId])
+  @@index([equipmentId, status])
+}
+
+model PickupVerification {
+  id             String        @id @default(uuid())
+  requestId      String        @unique
+  request        BorrowRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  codeHash       String
+  expiresAt      DateTime
+  failedAttempts Int           @default(0)
+  createdAt      DateTime      @default(now())
+
+  @@index([expiresAt])
+}
+
+model OverdueContactLog {
+  id            String        @id @default(uuid())
+  requestId     String
+  request       BorrowRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  contactedById String
+  method        String
+  note          String
+  contactedAt   DateTime      @default(now())
+
+  @@index([requestId, contactedAt])
+}
+
+model BorrowIncident {
+  id             String         @id @default(uuid())
+  requestId      String
+  request        BorrowRequest  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  type           IncidentType
+  status         IncidentStatus @default(OPEN)
+  note           String
+  estimatedValue Int?
+  createdById    String
+  createdAt      DateTime       @default(now())
+  resolutionNote String?
+  resolvedById   String?
+  resolvedAt     DateTime?
+  recoveredAt    DateTime?
+  recoveredById  String?
+  recoveryNote   String?
+
+  @@index([status, createdAt])
+  @@index([requestId, status])
+  @@index([recoveredAt])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  actorId    String?
+  actorRole  String?
+  action     String
+  targetType String
+  targetId   String
+  changes    Json?
+  createdAt  DateTime @default(now())
+
+  @@index([targetType, targetId, createdAt])
+  @@index([actorId, createdAt])
+}
+
+model DueReminder {
+  id           String        @id @default(uuid())
+  requestId    String
+  request      BorrowRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  kind         String
+  scheduledFor DateTime      @db.Date
+  sentAt       DateTime      @default(now())
+
+  @@unique([requestId, kind, scheduledFor])
+  @@index([sentAt])
+}
